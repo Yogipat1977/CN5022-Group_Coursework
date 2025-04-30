@@ -1,0 +1,311 @@
+---
+title: "Online Payment Fraud Detection"
+author: 
+  - u2613621 Jayrup Nakawala
+  - u2536809 Yogi Patel
+  - u2509367 Parth Rathwa
+date: "2025-05-02"
+execute:
+  freeze: true
+format:
+  html:
+    theme: flatly
+    toc: true
+    code_folding: show
+    code_download: true
+---
+
+## Import necessary libraries at the top
+
+```{python}
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.tree import DecisionTreeClassifier, plot_tree
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, precision_score, recall_score, f1_score
+import matplotlib.pyplot as plt
+import seaborn as sns
+```
+
+
+*   **Group Members:** [Member 1 Name], [Member 2 Name], [Member 3 Name]
+*   **Date:** [Date of Submission]
+
+## Introduction (5 Marks)
+
+Online payment systems have become ubiquitous, facilitating transactions globally. However, this convenience comes with the significant risk of fraudulent activities. Detecting fraudulent transactions is crucial for financial institutions and e-commerce platforms to minimize losses and maintain customer trust. Machine learning techniques offer powerful tools for identifying complex patterns indicative of fraud that traditional rule-based systems might miss.
+
+This notebook implements a Decision Tree classifier to predict fraudulent online payment transactions. We will use a publicly available dataset containing anonymized transaction data. The goal is to build a model that can effectively distinguish between legitimate and fraudulent transactions based on the provided features, leveraging the principles of decision tree induction discussed in the course lectures (Weeks 8 & 9).
+
+## Introduction to the Chosen Techniques (5 Marks)
+
+**Decision Trees:**
+As discussed in Week 8, a Decision Tree is a supervised machine learning algorithm used for both classification and regression tasks. It operates by recursively partitioning the data based on the values of input features. The structure resembles a flowchart:
+*   **Root Node:** Represents the entire dataset.
+*   **Internal Nodes:** Represent tests on specific attributes (features).
+*   **Branches:** Represent the outcome of a test (e.g., 'amount < 1000').
+*   **Leaf Nodes (Terminal Nodes):** Represent the final classification (or prediction) for instances that reach that node (e.g., 'Fraud', 'Not Fraud').
+
+**How it Works (Induction):**
+Decision trees are typically built using a greedy, top-down approach (like ID3 or C4.5/J48 mentioned in Week 8 & 9 slides). At each node, the algorithm selects the "best" attribute to split the data based on a specific criterion. Common criteria aim to maximize the purity of the resulting child nodes:
+1.  **Information Gain (Used by ID3):** Measures the reduction in entropy (uncertainty) achieved by splitting on an attribute. It favors attributes with many distinct values (Week 8, Slide 10-13; Week 9, Slide 2).
+2.  **Gain Ratio (Used by C4.5/J48):** A modification of Information Gain that penalizes attributes with many values by normalizing using "Split Information" (Week 9, Slides 3-5).
+3.  **Gini Impurity:** Measures the probability of misclassifying a randomly chosen element if it were randomly labeled according to the distribution of labels in the subset. Scikit-learn's default criterion is Gini.
+
+**Advantages:**
+*   Simple to understand and interpret. The tree structure can be visualized.
+*   Requires relatively little data preparation (e.g., handles non-linear relationships, no need for feature scaling).
+*   Can handle both numerical and categorical data (though scikit-learn requires encoding).
+
+**Disadvantages:**
+*   Prone to overfitting, especially with deep trees (Week 9, Slide 7). Techniques like pruning (pre-pruning or post-pruning) or setting `max_depth` are used to mitigate this.
+*   Can be unstable; small variations in data can result in a different tree.
+*   Can create biased trees if some classes dominate.
+
+**Evaluation Metrics:**
+For classification tasks, especially potentially imbalanced ones like fraud detection, we use metrics like:
+*   **Confusion Matrix:** Shows True Positives (TP), True Negatives (TN), False Positives (FP), False Negatives (FN).
+*   **Accuracy:** (TP+TN)/Total. Can be misleading if data is imbalanced.
+*   **Precision:** TP/(TP+FP). Measures the accuracy of positive predictions (minimize false alarms).
+*   **Recall (Sensitivity):** TP/(TP+FN). Measures how many actual positives were correctly identified (minimize missed frauds).
+*   **F1-Score:** Harmonic mean of Precision and Recall.
+
+## Introduction of the Dataset (5 Marks)
+
+The dataset used for this task is the "Online Payments Fraud Detection" dataset sourced from Kaggle.
+Link: https://www.kaggle.com/datasets/jainilcoder/online-payment-fraud-detection
+
+Loading the Data:
+
+```{python}
+# --- Code Cell ---
+file_path = 'onlinefraud.csv' # Make sure this file is in the same directory or provide the full path
+df = pd.read_csv(file_path)
+
+# Display first few rows
+print("Dataset Head:")
+print(df.head())
+
+# Display dataset information (columns, types, non-null counts)
+print("\nDataset Info:")
+df.info()
+
+# Display basic statistics for numerical columns
+print("\nDataset Description:")
+print(df.describe())
+
+# Check for missing values
+print("\nMissing Values per Column:")
+print(df.isnull().sum())
+```
+**Dataset Columns and Description:**
+As provided in the prompt and observed from `df.info()` and `df.describe()`:
+*   `step`: Time unit (1 step = 1 hour). Numerical.
+*   `type`: Type of transaction (e.g., PAYMENT, TRANSFER, CASH_OUT). Categorical (Object type).
+*   `amount`: Transaction amount. Numerical (Float).
+*   `nameOrig`: Customer initiating the transaction. Categorical (Object type) - High Cardinality.
+*   `oldbalanceOrg`: Origin account balance before the transaction. Numerical (Float).
+*   `newbalanceOrig`: Origin account balance after the transaction. Numerical (Float).
+*   `nameDest`: Customer receiving the transaction. Categorical (Object type) - High Cardinality.
+*   `oldbalanceDest`: Destination account balance before the transaction. Numerical (Float).
+*   `newbalanceDest`: Destination account balance after the transaction. Numerical (Float).
+*   `isFraud`: Target variable. 1 if the transaction is fraudulent, 0 otherwise. Numerical (Integer).
+*   `isFlaggedFraud`: System flag based on a business rule (transfer over 200k). Numerical (Integer).
+
+**Target Variable Distribution:**
+Fraud datasets are often highly imbalanced. Let's check the distribution of `isFraud`.
+
+```{python}
+print("\nTarget Variable (isFraud) Distribution:")
+print(df['isFraud'].value_counts())
+
+print("\nFraud Percentage:")
+fraud_percentage = (df['isFraud'].sum() / len(df)) * 100
+print(f"{fraud_percentage:.4f}%")
+
+# Visualize the distribution
+sns.countplot(x='isFraud', data=df)
+plt.title('Distribution of Fraudulent vs Non-Fraudulent Transactions')
+plt.show()
+```
+**Initial Observations:**
+*   The dataset is large (over 6 million entries).
+*   There are no missing values.
+*   The `isFraud` column confirms this is a binary classification task.
+*   The dataset is highly imbalanced, with only a very small percentage of transactions being fraudulent. This means accuracy alone is not a sufficient evaluation metric; we must focus on Precision and Recall.
+
+--- Markdown Cell ---
+## Input Encoding / Input Representation (How and why?) (5 Marks)
+
+**Need for Encoding:**
+Decision Tree algorithms implemented in libraries like scikit-learn require all input features to be numerical. Our dataset contains categorical features (`type`, `nameOrig`, `nameDest`) that need to be converted.
+
+**Handling Categorical Features:**
+1.  **`type`:** This feature has a small number of distinct categories (e.g., 'CASH_OUT', 'PAYMENT', 'CASH_IN', 'TRANSFER', 'DEBIT'). Since there's no inherent order between these types, **One-Hot Encoding** is the appropriate method. It creates new binary (0/1) columns for each category, preventing the model from assuming any ordinal relationship.
+2.  **`nameOrig`, `nameDest`:** These are customer/account identifiers. They have very high cardinality (many unique values). Including them directly via one-hot encoding would create millions of sparse features, making the model computationally expensive and likely leading to overfitting. Simple label encoding would incorrectly imply an order. Therefore, these features are generally not useful in their raw form for tree-based models and **will be dropped**. More advanced feature engineering (e.g., transaction frequency per user) could potentially extract value, but is beyond the scope of this basic implementation.
+
+**Handling Other Features:**
+*   **`step`:** While numerical, the absolute time step might not be as relevant as time-based patterns (e.g., time of day, day of week). For simplicity, we will **keep it** as is for this baseline model, but acknowledge potential for feature engineering.
+*   **`isFlaggedFraud`:** This is a rule-based flag from the system. While potentially predictive, it might be *too* predictive or represent information leakage if the flag is set *based on* knowing it's likely fraud, potentially overlapping with our target. Furthermore, the description suggests it's based on a simple rule (transfer > 200k), which the tree can learn itself from `amount` and `type`. To build a model based on the core transaction features, we will **drop `isFlaggedFraud`**.
+*   **Numerical Features:** `amount`, `oldbalanceOrg`, `newbalanceOrig`, `oldbalanceDest`, `newbalanceDest` are already numerical and can be used directly. Decision trees do not strictly require scaling, so we will use them as is.
+
+**Defining Features (X) and Target (y):**
+*   **Target (y):** `isFraud`
+*   **Features (X):** `step`, `amount`, `oldbalanceOrg`, `newbalanceOrig`, `oldbalanceDest`, `newbalanceDest`, and the one-hot encoded columns derived from `type`.
+
+```{python}
+# --- Code Cell ---
+
+# Drop irrelevant/high-cardinality columns
+df_processed = df.drop(['nameOrig', 'nameDest', 'isFlaggedFraud'], axis=1)
+print("Columns after dropping irrelevant ones:", df_processed.columns)
+
+# Apply One-Hot Encoding to 'type'
+encoder = OneHotEncoder(sparse_output=False, drop='first') # drop='first' to avoid multicollinearity
+type_encoded = encoder.fit_transform(df_processed[['type']])
+
+# Create a DataFrame with the encoded columns
+# Use feature names provided by the encoder
+type_encoded_df = pd.DataFrame(type_encoded, columns=encoder.get_feature_names_out(['type']))
+
+# Drop the original 'type' column and concatenate the encoded ones
+df_processed = df_processed.drop('type', axis=1)
+df_final = pd.concat([df_processed, type_encoded_df], axis=1)
+
+print("\nFinal DataFrame Head after Encoding:")
+print(df_final.head())
+print("\nFinal DataFrame Columns:", df_final.columns)
+
+# Define Features (X) and Target (y)
+X = df_final.drop('isFraud', axis=1)
+y = df_final['isFraud']
+
+print("\nShape of Features (X):", X.shape)
+print("Shape of Target (y):", y.shape)
+```
+
+--- Markdown Cell ---
+## Coding for the Implementation with Comments (10 marks)
+
+Now we will implement the Decision Tree model using scikit-learn.
+
+```{python}
+# --- Code Cell ---
+
+# 1. Split Data into Training and Testing Sets
+# We use train_test_split to divide the data.
+# test_size=0.2 means 20% of the data is reserved for testing.
+# random_state ensures reproducibility of the split.
+# stratify=y is crucial for imbalanced datasets; it ensures that the proportion
+# of fraud/non-fraud instances is the same in both train and test sets.
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+print("Training set shape:", X_train.shape, y_train.shape)
+print("Testing set shape:", X_test.shape, y_test.shape)
+print("\nFraud distribution in Training set:")
+print(y_train.value_counts(normalize=True))
+print("\nFraud distribution in Testing set:")
+print(y_test.value_counts(normalize=True))
+
+
+# 2. Instantiate the Decision Tree Classifier
+# We create an instance of the DecisionTreeClassifier.
+# criterion='gini' uses the Gini impurity for splitting (default). Could use 'entropy' for Information Gain.
+# max_depth=10 is set as a pre-pruning measure to prevent the tree from growing too deep and overfitting.
+# This value can be tuned. Without it, the tree might grow very large on this dataset.
+# random_state ensures reproducibility of the model training process.
+dt_classifier = DecisionTreeClassifier(criterion='gini', max_depth=10, random_state=42)
+
+
+# 3. Train the Model
+# We fit the classifier to the training data (X_train, y_train).
+# The model learns the patterns linking features to the 'isFraud' target.
+print("\nTraining the Decision Tree model...")
+dt_classifier.fit(X_train, y_train)
+print("Model training finished.")
+
+
+# 4. Make Predictions
+# We use the trained model to predict the 'isFraud' status for the unseen test data (X_test).
+print("\nMaking predictions on the test set...")
+y_pred = dt_classifier.predict(X_test)
+print("Predictions finished.")
+
+# (Optional) Predict probabilities - useful for ROC curves, etc.
+# y_pred_proba = dt_classifier.predict_proba(X_test)[:, 1]
+```
+
+--- Markdown Cell ---
+## Analysis of Results and Comments (10marks)
+
+We now evaluate the performance of our trained Decision Tree model on the test set using the standard classification metrics.
+
+```{python}
+# --- Code Cell ---
+
+# 1. Calculate Evaluation Metrics
+accuracy = accuracy_score(y_test, y_pred)
+precision = precision_score(y_test, y_pred) # Focus on class 1 (Fraud)
+recall = recall_score(y_test, y_pred)       # Focus on class 1 (Fraud)
+f1 = f1_score(y_test, y_pred)               # Focus on class 1 (Fraud)
+conf_matrix = confusion_matrix(y_test, y_pred)
+class_report = classification_report(y_test, y_pred, target_names=['Not Fraud (0)', 'Fraud (1)'])
+
+print("\n--- Model Evaluation Results ---")
+print(f"Accuracy: {accuracy:.4f}")
+print(f"Precision (Fraud): {precision:.4f}")
+print(f"Recall (Fraud): {recall:.4f}")
+print(f"F1-Score (Fraud): {f1:.4f}")
+
+print("\nConfusion Matrix:")
+# Displaying Confusion Matrix more visually
+plt.figure(figsize=(6, 4))
+sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues',
+            xticklabels=['Predicted Not Fraud', 'Predicted Fraud'],
+            yticklabels=['Actual Not Fraud', 'Actual Fraud'])
+plt.ylabel('Actual')
+plt.xlabel('Predicted')
+plt.title('Confusion Matrix')
+plt.show()
+
+
+print("\nClassification Report:")
+print(class_report)
+```
+
+```{python}
+plt.figure(figsize=(40,20))
+# only show depth till 5
+plot_tree(dt_classifier, feature_names=X.columns, class_names=['Not Fraud', 'Fraud'], filled=True, max_depth=5)
+plt.show()
+```
+
+**Comments on Results:**
+
+*   **Accuracy:** The overall accuracy is typically very high (likely > 99%) due to the severe class imbalance. However, this metric is misleading as a model predicting "Not Fraud" for every transaction would achieve high accuracy but be useless.
+*   **Confusion Matrix Breakdown:**
+    *   **True Negatives (TN):** Top-left. Correctly identified non-fraudulent transactions (usually a very large number).
+    *   **False Positives (FP):** Top-right. Legitimate transactions incorrectly flagged as fraud (Type I error). Aim to minimize for customer satisfaction.
+    *   **False Negatives (FN):** Bottom-left. Fraudulent transactions missed by the model (Type II error). Critical to minimize for loss prevention.
+    *   **True Positives (TP):** Bottom-right. Correctly identified fraudulent transactions.
+*   **Precision (Fraud):** This tells us "Out of all transactions predicted as fraud, what proportion actually *were* fraud?". A high precision means fewer false alarms (low FP rate). The result here might be high (e.g., > 0.8 or 0.9) indicating the model is quite confident when it flags fraud.
+*   **Recall (Fraud):** This tells us "Out of all actual fraud transactions, what proportion did the model *catch*?". This is often the most critical metric in fraud detection. A recall of, say, 0.75 means the model caught 75% of actual frauds, but missed 25% (high FN rate). Improving recall is often a primary goal, even if it slightly lowers precision.
+*   **F1-Score (Fraud):** Provides a balance between precision and recall. Useful for overall model assessment for the minority class.
+*   **Classification Report:** Summarizes precision, recall, and F1-score for both classes (0 and 1) and provides averages. We primarily focus on the metrics for the 'Fraud (1)' class.
+
+**Overall Assessment:**
+The Decision Tree model (with `max_depth=10`) likely achieves reasonable performance, especially in precision. Precision might be high (e.g., 90%+), meaning when it predicts fraud, it's often correct. However, Recall might be lower (e.g., 70-85%), indicating that it misses a portion of the fraudulent transactions. The performance heavily depends on the chosen `max_depth` and other potential tuning. Without limiting depth, the tree might achieve higher recall on the training set but perform poorly on the test set due to overfitting.
+
+**Potential Improvements:**
+1.  **Hyperparameter Tuning:** Use techniques like GridSearchCV or RandomizedSearchCV to find optimal values for `max_depth`, `min_samples_split`, `min_samples_leaf`, and `criterion` ('gini' vs 'entropy').
+2.  **Handling Imbalance:** Implement techniques specifically designed for imbalanced data:
+    *   **Class Weighting:** Assign a higher penalty to misclassifying the minority class (fraud) during training (`class_weight='balanced'` in `DecisionTreeClassifier`).
+    *   **Resampling:** Oversample the minority class (e.g., SMOTE) or undersample the majority class in the *training data only*.
+3.  **Feature Engineering:** Create new features that might be more predictive, such as:
+    *   Difference between old and new balances (`delta_balance_orig`, `delta_balance_dest`).
+    *   Ratios of amount to balances.
+    *   Features based on `step` (e.g., hour of day, day of week).
+4.  **Ensemble Methods:** Use more robust algorithms often built on decision trees, like Random Forests or Gradient Boosting (e.g., XGBoost, LightGBM), which usually offer better performance and are less prone to overfitting.
+5.  **Pruning:** Explore post-pruning techniques if a deeper tree is initially grown.
+
